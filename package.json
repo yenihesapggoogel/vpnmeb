@@ -1,0 +1,16 @@
+{
+  "name": "study-notes-sync",
+  "version": "1.0.0",
+  "description": "Personal study notes sync service",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "generate-id": "node -e \"console.log(require('crypto').randomUUID())\""
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

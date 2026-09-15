@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: study-notes-sync
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: APP_ID
+        value: 8a5fb665-632e-4f9b-8337-e475a79d994c
+      - key: WS_PATH
+        value: /notes-sync
