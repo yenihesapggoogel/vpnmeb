@@ -148,22 +148,51 @@ wss.on('connection', (ws) => {
   let headerSent = false;
   let closed = false;
 
+  // Oyun icin uzun oturum: 5 dk. Her iki yondeki aktivitede yenilenir.
+  const IDLE_MS = 300000;
+  let idleTimer = null;
+  let hbTimer = null;
+  const refreshIdle = () => {
+    if (closed) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => cleanup(), IDLE_MS);
+  };
   const cleanup = () => {
     if (closed) return;
     closed = true;
+    if (idleTimer) clearTimeout(idleTimer);
+    if (hbTimer) clearInterval(hbTimer);
     try { ws.close(); } catch {}
     try { tcpSock && tcpSock.destroy(); } catch {}
     try { udpSock && udpSock.close(); } catch {}
   };
   ws.on('close', cleanup);
   ws.on('error', cleanup);
+  // Render LB + NAT icin heartbeat (30sn). Oyun sirasinda baglanti uyumasin.
+  try { ws.isAlive = true; } catch {}
+  ws.on('pong', () => { try { ws.isAlive = true; } catch {} refreshIdle(); });
+  hbTimer = setInterval(() => {
+    if (closed) { clearInterval(hbTimer); return; }
+    try {
+      if (ws.isAlive === false) { cleanup(); return; }
+      ws.isAlive = false;
+      ws.ping(() => {});
+    } catch { cleanup(); }
+  }, 30000);
+  refreshIdle();
 
-  // UDP hedefe gonder + cevabi geri yaz
+  // Hedefe gonder. Gecici UDP hatasinda WS'yi oldurme (oyun devam etsin).
   const sendUdp = (packet) => {
-    if (!udpSock || !udpTarget) return;
-    udpSock.send(packet, udpTarget.port, udpTarget.host, (err) => {
-      if (err) cleanup();
-    });
+    if (closed || !udpSock || !udpTarget) return;
+    try {
+      udpSock.send(packet, udpTarget.port, udpTarget.host, () => {});
+    } catch {}
+    refreshIdle();
+  };
+  const sendWs = (buf) => {
+    if (closed) return;
+    try { ws.send(buf); } catch { cleanup(); return; }
+    refreshIdle();
   };
 
   ws.on('message', (msg) => {
@@ -181,33 +210,37 @@ wss.on('connection', (ws) => {
       ver = h.version;
 
       if (h.command === 1) {
-        // ===== TCP =====
+        // ===== TCP (tarayici + Roblox giris/assets) =====
         // Node net.Socket connect oncesi yazilan veriyi buffer'lar, o yuzden
         // stage'i hemen forward yapip ilk payload'u direkt yaziyoruz.
         stage = 'forward';
         tcpSock = net.connect({ host: h.address, port: h.port }, () => {
           if (closed) return;
           // VLESS response header (istemci bunu bekler)
-          try { ws.send(Buffer.from([ver, 0])); } catch { cleanup(); return; }
+          sendWs(Buffer.from([ver, 0]));
           headerSent = true;
         });
-        tcpSock.setTimeout(30000);
+        // Oyun asset baglantilari uzun sure acik kalabilir: 120sn
+        tcpSock.setTimeout(120000);
         tcpSock.on('data', (chunk) => {
           if (closed) return;
-          try { ws.send(chunk); } catch { cleanup(); }
+          sendWs(chunk);
         });
         tcpSock.on('error', cleanup);
         tcpSock.on('close', cleanup);
         tcpSock.on('timeout', cleanup);
         if (h.payload && h.payload.length > 0) {
-          try { tcpSock.write(Buffer.from(h.payload)); } catch { cleanup(); return; }
+          try { tcpSock.write(Buffer.from(h.payload)); refreshIdle(); } catch { cleanup(); return; }
         }
       } else if (h.command === 2) {
-        // ===== UDP (DNS vb.) =====
+        // ===== UDP (DNS + Roblox oyun trafigi) =====
+        // NOT: Render'a giris TCP/WS, oyun UDP'si bunun icinde tasinir (Hotspot gibi native UDP degil).
         udpTarget = { host: h.address, port: h.port };
+        const isV6 = h.address.indexOf(':') !== -1;
         try {
-          udpSock = dgram.createSocket('udp4');
+          udpSock = dgram.createSocket(isV6 ? 'udp6' : 'udp4');
         } catch { cleanup(); return; }
+        try { udpSock.bind(() => { try { udpSock.setRecvBufferSize(2 * 1024 * 1024); } catch {} try { udpSock.setSendBufferSize(2 * 1024 * 1024); } catch {} }); } catch {}
         udpSock.on('message', (rmsg) => {
           if (closed) return;
           try {
@@ -215,17 +248,19 @@ wss.on('connection', (ws) => {
             lenBuf.writeUInt16BE(rmsg.length, 0);
             if (!headerSent) {
               headerSent = true;
-              ws.send(Buffer.concat([Buffer.from([ver, 0]), lenBuf, Buffer.from(rmsg)]));
+              sendWs(Buffer.concat([Buffer.from([ver, 0]), lenBuf, Buffer.from(rmsg)]));
             } else {
-              ws.send(Buffer.concat([lenBuf, Buffer.from(rmsg)]));
+              sendWs(Buffer.concat([lenBuf, Buffer.from(rmsg)]));
             }
           } catch { cleanup(); }
         });
-        udpSock.on('error', cleanup);
+        // UDP soket hatasinda WS'yi hemen oldurme, oyun toparlasin
+        udpSock.on('error', () => { refreshIdle(); });
         // ilk payload icindeki UDP paketlerini coz
         const packets = splitUdpPackets(Buffer.from(h.payload));
         for (const p of packets) sendUdp(Buffer.from(p));
         stage = 'forward-udp';
+        refreshIdle();
         // Eger hic paket yoksa (sadece header) bekle, sonraki mesajlar paket icerir
       } else {
         // MUX desteklenmiyor
@@ -238,6 +273,7 @@ wss.on('connection', (ws) => {
     // --- forward TCP ---
     if (stage === 'forward') {
       if (!tcpSock || tcpSock.destroyed) { cleanup(); return; }
+      refreshIdle();
       try {
         const ok = tcpSock.write(data);
         if (!ok) {
@@ -249,19 +285,15 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // --- forward UDP ---
+    // --- forward UDP (oyun paketleri art arda gelir) ---
     if (stage === 'forward-udp') {
+      if (!udpSock || !udpTarget) { cleanup(); return; }
       const packets = splitUdpPackets(data);
+      // Bos/bozuk frame gelirse baglantiyi oldurme, yoksay (oyun toparlar)
+      if (packets.length === 0) { refreshIdle(); return; }
       for (const p of packets) sendUdp(Buffer.from(p));
       return;
     }
-  });
-
-  // genel guvenlik timeout'u (Render free'de asili baglanti kalmasin)
-  ws._idle = setTimeout(() => cleanup(), 120000);
-  ws.on('message', () => {
-    clearTimeout(ws._idle);
-    ws._idle = setTimeout(() => cleanup(), 120000);
   });
 });
 
