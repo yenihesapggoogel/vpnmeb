@@ -2,6 +2,8 @@
   "name": "study-notes-sync",
   "version": "1.0.0",
   "description": "Personal study notes sync service",
+  "private": true,
+  "type": "commonjs",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
