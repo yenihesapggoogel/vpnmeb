@@ -475,8 +475,8 @@ try {
 } catch (e) {
   console.log("[diag] CID okunamadi", String(e).slice(0, 120));
 }
-for (const k of Object.keys(Deno.env.toObject())) {
-  console.log("[env]", k, "=", String(Deno.env.get(k)).slice(0, 200));
+for (const k of ["DENO_EGRESS_HEADER_POLICY", "CDN_LOOP", "OTEL_DENO_VSOCK"]) {
+  console.log("[env]", k, "=", String(Deno.env.get(k)).slice(0, 400));
 }
 
 // Deno Deploy / deno serve: modulun varsayilan export'unu fetch handler olarak
