@@ -2,13 +2,14 @@
  * vless-worker - VLESS over WebSocket, Cloudflare Workers surumu
  *
  * VDS/VPS GEREKMEZ: Cloudflare'in ucretsiz planinda calisir (kart istemez).
- * Kurulum: Cloudflare Dashboard -> Workers & Pages -> Create -> Worker ->
- * kodu yapistir -> Deploy. Adres: https://<worker-adi>.<hesap>.workers.dev
+ * Kurulum: https://dash.cloudflare.com -> Workers & Pages -> Create -> Worker
+ *          -> kodu yapistir -> Deploy.
+ * Adres:   https://<worker-adi>.<hesap>.workers.dev
  *
  * Desteklenen: VLESS + WS + TLS (v2rayN, v2rayNG, Hiddify, NekoBox, Streisand...)
  * Desteklenmeyen: UDP (Roblox/DNS gibi UDP istekleri) - Workers UDP acmaz.
  *
- * Degiskenler (opsiyonel, Dashboard -> Settings -> Variables):
+ * Degiskenler (opsiyonel, Dashboard -> Settings -> Variables and Secrets):
  *   APP_ID  : istemcideki UUID ile ayni olmali (varsayilan asagidaki)
  *   WS_PATH : websocket yolu (varsayilan /notes-sync)
  */
@@ -105,13 +106,25 @@ function parseHeader(buf, idBytes) {
 }
 
 function toBytes(data) {
-  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (typeof data === "string") return new TextEncoder().encode(data);
   if (ArrayBuffer.isView(data)) {
     return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
   }
-  if (typeof data === "string") return new TextEncoder().encode(data);
+  if (typeof data?.byteLength === "number") return new Uint8Array(data);
   return new Uint8Array(0);
 }
+
+/** WebSocket mesaji workerd'de Blob, ArrayBuffer veya string olabilir. */
+async function messageToBytes(data) {
+  if (data && typeof data.arrayBuffer === "function") {
+    return new Uint8Array(await data.arrayBuffer());
+  }
+  return toBytes(data);
+}
+
+/** hedef -> istemci yonunde tek seferde gonderilecek maksimum parca */
+const MAX_CHUNK = 32 * 1024;
+const MAX_HEADER = 8 * 1024;
 
 // ---------- VLESS oturumu ----------
 function handleVless(ws, appId) {
@@ -126,9 +139,9 @@ function handleVless(ws, appId) {
   let pending = new Uint8Array(0);
   let socket = null;
   let writer = null;
-  let wchain = Promise.resolve();
-  const early = []; // baglanti kurulurken gelen veriler
-  let ver = 0;
+  const queue = []; // yazici hazir olmadan gelen parcalar (sira korunur)
+  const pre = []; // TCP baglantisi kurulurken gelen parcalar
+  let chain = Promise.resolve();
 
   const close = () => {
     if (closed) return;
@@ -139,46 +152,56 @@ function handleVless(ws, appId) {
   };
 
   const send = (buf) => {
-    if (closed) return;
+    if (closed || !buf || buf.length === 0) return;
     try { ws.send(buf); } catch { close(); }
   };
 
-  const write = (chunk) => {
-    if (closed || chunk.length === 0) return;
-    wchain = wchain
-      .then(async () => {
-        if (closed) return;
-        if (!writer) { early.push(chunk); return; }
+  const drain = async () => {
+    if (!writer) return;
+    while (!closed && queue.length > 0) {
+      const chunk = queue.shift();
+      try {
         await writer.write(chunk);
-      })
-      .catch(() => close());
+      } catch {
+        close();
+        return;
+      }
+    }
   };
 
-  const flushEarly = async () => {
-    while (early.length > 0 && !closed) {
-      const c = early.shift();
-      try { await writer.write(c); } catch { close(); return; }
-    }
+  // Tum yazmalar ayni zincirden gecer -> parcalar sirayla hedefe gider.
+  const enqueue = (chunk) => {
+    if (closed || !chunk || chunk.length === 0) return;
+    queue.push(chunk);
+    chain = chain.then(drain).catch(() => close());
   };
 
   const openTcp = async (h) => {
     stage = "connecting";
-    ver = h.version;
     try {
       socket = connect({ hostname: h.address, port: h.port });
-    } catch (e) {
+    } catch {
       close();
       return;
     }
+    socket.closed.catch(() => close());
+
     try {
       writer = socket.writable.getWriter();
-    } catch (e) {
+      await socket.opened; // baglanti gercekten kuruldu mu?
+    } catch {
       close();
       return;
     }
+    if (closed) return;
+
     // istemciye VLESS cevap basligi: ver + 0
-    send(new Uint8Array([ver, 0]));
+    send(new Uint8Array([h.version, 0]));
     stage = "forward";
+
+    // header ile birlikte gelen ilk veri + baglanti kurulurken birikenler
+    enqueue(h.payload);
+    while (pre.length > 0) enqueue(pre.shift());
 
     // hedef -> istemci
     (async () => {
@@ -187,29 +210,35 @@ function handleVless(ws, appId) {
         while (!closed) {
           const { done, value } = await reader.read();
           if (done) break;
-          if (value && value.length) send(value);
+          if (value && value.length) {
+            for (let off = 0; off < value.length; off += MAX_CHUNK) {
+              send(value.subarray(off, Math.min(off + MAX_CHUNK, value.length)));
+            }
+          }
         }
       } catch { /* yoksay */ }
       close();
     })();
-
-    // header ile birlikte gelen ilk veri
-    if (h.payload.length > 0) {
-      try { await writer.write(h.payload); } catch { close(); return; }
-    }
-    await flushEarly();
   };
 
-  ws.addEventListener("message", (event) => {
+  const onMessage = async (data) => {
     if (closed) return;
-    const chunk = toBytes(event.data);
+    const chunk = await messageToBytes(data);
     if (chunk.length === 0) return;
 
     if (stage === "header") {
       pending = concat(pending, chunk);
+      if (pending.length > MAX_HEADER) {
+        close();
+        return;
+      }
       const h = parseHeader(pending, idBytes);
       if (!h) return; // header henuz tamamlanmadi
-      if (h.error) { close(); return; }
+      pending = new Uint8Array(0);
+      if (h.error) {
+        close();
+        return;
+      }
       if (h.command !== 1) { // 2 = UDP (Workers desteklemez)
         close();
         return;
@@ -218,7 +247,21 @@ function handleVless(ws, appId) {
       return;
     }
 
-    write(chunk);
+    if (stage === "connecting") {
+      pre.push(chunk);
+      return;
+    }
+
+    enqueue(chunk);
+  };
+
+  // Mesajlar sirayla islenir (Blob -> ArrayBuffer donusumu async).
+  let rchain = Promise.resolve();
+  ws.addEventListener("message", (event) => {
+    const data = event.data;
+    rchain = rchain
+      .then(() => onMessage(data))
+      .catch(() => close());
   });
 
   ws.addEventListener("close", close);

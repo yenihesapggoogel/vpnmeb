@@ -4,72 +4,24 @@ Kisisel not senkron servisi gorunumu altinda calisan, MEB/Fatih gibi sadece `TCP
 
 > Test edildi: `node test-vless.js` ile TCP proxy + UUID auth dogrulandi.
 
-## DURUM (21.10.2026)
+## En hizli kurulum: Cloudflare Workers (VDS/VPS gerekmez, kart istemez)
 
-| Platform | Durum | Not |
-|---|---|---|
-| **Render** (`vpnmeb.onrender.com`) | Kod calisiyor, ama servis **"Service Suspended"** -> dashboard'dan **Resume** lazim | `onrender.com` okul filtresinden gecir; Render'da 100GB/ay limiti var |
-| Deno Deploy (`vpnmeb.yenihesapp401.deno.net`) | **503** - production routing'i cozulemedi (platform vsock adresini kendisi tutuyor, uygulama `AddrInUse` aliyor) | Ayrica okul (MEB) filtresi `*.deno.net` adreslerini engelliyor; Deno AUP'de "VPN / Forward proxy" yasak |
-| Deno Deploy preview | Bir ara calismisti (HTTP 200) | Sadece preview, production degil |
-
-**Hemen kullanmak icin:** Render dashboard > `vpnmeb` servisi > **Resume**.
-Sonra bu linki v2rayNG / v2rayN'ye yapistir:
-
-```
-vless://8a5fb665-632e-4f9b-8337-e475a79d994c@vpnmeb.onrender.com:443?encryption=none&security=tls&sni=vpnmeb.onrender.com&fp=chrome&type=ws&host=vpnmeb.onrender.com&path=%2Fnotes-sync#Render-MEB
-```
-
-> Render free 15 dk bos kalinca uyur (ilk baglanti ~50 sn). Cozum: UptimeRobot ile
-> 10 dk'da bir `https://vpnmeb.onrender.com/health` adresine ping.
-
-## VDS/VPS olmadan: Cloudflare Workers (ucretsiz, kart istemez)
-
-`workers/vless-worker.js` = ayni VLESS-over-WS sunucusunun Cloudflare Workers surumu.
-Sunucu/VDS yok, Cloudflare'in ucretsiz planinda calisir (100.000 istek/gun).
+`workers/vless-worker.js` = ayni VLESS-over-WS sunucusunun **Cloudflare Workers** surumu.
+Yerel `workerd` testi gecti: health + decoy sayfa + VLESS/TCP proxy + yanlis UUID reddi
+(`node workers/test-worker.js` -> `WORKER TESTLERI GECTI`).
 
 1. https://dash.cloudflare.com -> **Workers & Pages** -> **Create** -> **Worker**
-2. Isim ver (ornek `notes-sync`) -> **Deploy**
-3. **Edit code** -> icindeki kodu sil, `workers/vless-worker.js` icerigini yapistir -> **Deploy**
-4. Test: `https://notes-sync.<hesap>.workers.dev/health` -> `ok ...` yazmali
-5. Link uret:
+2. Ad: `notes-sync` -> **Deploy**
+3. **Edit code** -> icerigi sil, `workers/vless-worker.js` dosyasini yapistir -> **Deploy**
+4. Test: `https://notes-sync.<hesap>.workers.dev/health` -> `ok ...`
+5. Link: `node generate-link.js notes-sync.<hesap>.workers.dev <UUID>`
 
-```bash
-node generate-link.js notes-sync.<hesap>.workers.dev 8a5fb665-632e-4f9b-8337-e475a79d994c
-```
+CLI deploy, degiskenler (`APP_ID`, `WS_PATH`), limitler ve MEB filtresi notu:
+[`workers/README.md`](workers/README.md)
 
-(UUID'yi degistirmek istersen Worker > Settings > Variables > `APP_ID` ekle; ayni
-degeri linke de yaz.)
-
-**Sinirlar:** Workers UDP acmaz -> Roblox/DNS gibi UDP istekleri calismaz, normal
-web gezinmesi (TCP 443) calisir. Okul filtresi `workers.dev` adresini engelliyorsa
-Worker'a kendi domainini bagla (Domains > Custom Domain) - ucretsiz plan domain
-baglamaya izin verir, domain ucretli olabilir.
-
-**Kontrol:** Okul bilgisayarinda `https://notes-sync.<hesap>.workers.dev/` ac.
-Not defteri sayfasi geliyorsa filtre gecmemis demektir (link calisir); "MEB Erisim
-Engeli" geliyorsa o alan adi kategoriden takiliyor -> hazir istemcilere bak.
-
-## Hic sunucu olmadan: hazir istemciler (en hizli yol)
-
-Kod/deploy istemiyorsan, filtre asmak icin tasarlanmis ucretsiz araclar:
-
-| Arac | Ne yapar | Not |
-|---|---|---|
-| **Psiphon** (psiphon.ca) | Obfuscated proxy, kendi sunucu agi | Kur, "Connect" bas. MEB'de en yuksek sans. |
-| **Cloudflare WARP** (+ warp-plus) | Cloudflare agina MASQUE/WireGuard | 1.1.1.1 DNS'i tikali olabilir; warp-plus obfuscation ile dener |
-| **Tor Browser + Snowflake** | Tor koprusu, domain engeli tanimaz | Yavas ama inatci |
-| **Hiddify / v2rayNG + ucretsiz config** | Hazir VLESS/VMess abonelikleri | Halka acik nodelar guvensiz ve kararsiz; sadece acil durum |
-
-Siralama onerisi: **Psiphon -> Cloudflare Worker (yukarida) -> Tor+Snowflake**.
-Hepsi "sunucu kirala" demeden calisir; tek gereken cihaza uygulamayi kurmak.
-
-## Deno Deploy'a deploy (denendi, production'da 503)
-
-Node surumu (`server.js`) Deno'da calismaz -> Deno icin ayri giris noktasi var: `main.ts`
-(`Deno.serve` + `Deno.upgradeWebSocket` + `Deno.connect`). Yerelde testler gecti, ancak
-production'da platform routing'i cozulemedigi icin 503 veriyor (detay: `main.ts` icindeki
-yorumlar). Deno Deploy AUP'inde VPN/forward proxy yasak oldugu icin kalici cozum olarak
-onerilmez; Render ya da kendi VPS'in daha saglam secenek.
+**Sinir:** Workers UDP acmaz -> Roblox/DNS gibi UDP istekleri calismaz, normal web
+gezinmesi (TCP 443) calisir. `workers.dev` okulda engelliyse Worker'a kendi domainini
+bagla veya Psiphon gibi hazir bir istemci kullan.
 
 ## Neden Hotspot Shield artik calismiyor?
 
@@ -136,42 +88,6 @@ Render free notlari:
 - 15 dk bos kalinca uyur, ilk baglanti ~50 sn surer. Cozum: UptimeRobot ile 10 dk'da bir `/health`'e ping at.
 - Ayda ~100GB limit. Video izlersen cabuk biter, biterse silip yeni isimle redeploy et.
 - Proxy kelimesi repo ismi/aciklamasinda gecmesin, Render askıya alabiliyor. Bu repo zaten masum isimli.
-
-## 3b) Deno Deploy'a deploy (alternatif)
-
-Node surumu (`server.js`) Deno'da calismaz -> Deno Deploy **503** verir.
-Deno icin ayri bir giris noktasi var: `main.ts` (`Deno.serve` + `Deno.upgradeWebSocket` + `Deno.connect`).
-
-GitHub baglantili app (console'da repo secili ise) icin: repoya `main.ts` + `deno.json`
-pushlayin, otomatik deploy olur.
-
-```bash
-# deno.json -> {"deploy": {"entrypoint": "main.ts"}}  (zaten ekli)
-deno deploy create \
-  --org yenihesapp401 \
-  --app vpnmeb \
-  --source local \
-  --runtime-mode dynamic --entrypoint main.ts \
-  --build-timeout 5 --build-memory-limit 1024 --region eu
-```
-
-Link uretme:
-
-```bash
-node generate-link.js vpnmeb.yenihesapp401.deno.net SENIN-UUID /notes-sync
-```
-
-### Deno Deploy limitleri (okuman lazim)
-
-| Konu | Durum |
-|---|---|
-| VLESS + WS + TCP | Calisir (`Deno.upgradeWebSocket` + `Deno.connect`) |
-| UDP (DNS-over-UDP, Roblox oyun trafigi) | **Calismaz**: Deno 2.x stable'da UDP API'si yok (`Deno.udp` / `Deno.listenUDP` undefined) |
-| 443'e ham TCP baglanti | Deno Deploy "TLS proxying" politikasi 443'e `Deno.connect` ile ham baglantiyi yasakliyor; HTTPS siteler engellenebilir |
-| Kullanim politikasi | Deno Deploy AUP'inde **"Forward proxy"** ve **"VPN"** yasakli -> app/hesap kapatilabilir |
-
-Sonuc: Deno Deploy okulda kalici cozum degil. **Render (free)** veya kendi VPS'in
-(Contabo/Hetzner) daha saglam secenek; Render'da UDP de calisiyor.
 
 ## 4) Baglanti linki uret
 
@@ -247,12 +163,12 @@ Bazi okullarda `*.onrender.com` proxy kategorisine alinmis oluyor. Cozumler:
 
 ## Dosyalar
 
-- `server.js` - VLESS+WS sunucu (Node/Render: TCP+UDP, auth, decoy sayfa)
-- `main.ts` - ayni protokolun Deno (Deno Deploy) surumu
-- `deno.json` - Deno task'lari + deploy entrypoint
+- `server.js` - VLESS+WS sunucu (TCP+UDP, auth, decoy sayfa)
+- `workers/vless-worker.js` - ayni sunucunun **Cloudflare Workers** surumu (TCP, VDS'siz)
+- `workers/wrangler.toml` - Workers config (`npx wrangler deploy`)
+- `workers/test-worker.js` - Worker icin uctan uca test (`node workers/test-worker.js`)
+- `workers/README.md` - Workers deploy + limitler + MEB notu
 - `package.json` - `ws` bagimliligi
 - `render.yaml` - tek tik deploy
 - `generate-link.js` - istemci link uretici
-- `test-vless.js` - lokal test (`node test-vless.js`, `SERVER_CMD` ile sunucu degistirilebilir)
-- `test-udp.js` / `test-udp-local.js` - UDP testleri
-- `test-remote.js` - canli sunucuya (wss://) uctan uca test
+- `test-vless.js` - lokal test (`node test-vless.js`)

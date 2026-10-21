@@ -1,9 +1,6 @@
 /* Lokal test: server.js'in VLESS-TCP aktarmasini dogrular.
  * Kullanim: $env:APP_ID="test-uuid..."; node test-vless.js
  * Gercek UUID ile calistirin.
- *
- * Deno surumu icin:
- *   $env:SERVER_CMD="deno run --allow-net main.ts"; node test-vless.js
  */
 const { spawn } = require('child_process');
 const WebSocket = require('ws');
@@ -12,15 +9,10 @@ const crypto = require('crypto');
 const APP_ID = process.env.APP_ID || crypto.randomUUID();
 const WS_PATH = process.env.WS_PATH || '/notes-sync';
 const PORT = 18080;
-// Hangi sunucu test edilsin: "node server.js" (varsayilan) veya
-// "deno run --allow-net main.ts" gibi tam komut.
-const SERVER_CMD = (process.env.SERVER_CMD || 'node server.js').trim();
-const [SERVER_BIN, ...SERVER_ARGS] = SERVER_CMD.split(/\s+/);
 
 console.log('Test APP_ID:', APP_ID);
-console.log('Test sunucu :', SERVER_CMD);
 
-const srv = spawn(SERVER_BIN, SERVER_ARGS, {
+const srv = spawn('node', ['server.js'], {
   env: { ...process.env, PORT: String(PORT), APP_ID, WS_PATH },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

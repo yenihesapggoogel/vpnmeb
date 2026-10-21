@@ -1,0 +1,11 @@
+name = "notes-sync"
+main = "vless-worker.js"
+compatibility_date = "2026-10-01"
+
+# Ucretsiz plan: kart gerekmez.
+# Deploy (opsiyonel, CLI ile):
+#   npx wrangler deploy --config workers/wrangler.toml
+#
+# Degiskenler (Dashboard > Settings > Variables and Secrets):
+#   APP_ID  = istemcideki UUID
+#   WS_PATH = /notes-sync
