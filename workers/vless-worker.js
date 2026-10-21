@@ -1,4 +1,4 @@
-/**
+﻿/**
  * vless-worker - VLESS over WebSocket, Cloudflare Workers surumu
  *
  * VDS/VPS GEREKMEZ: Cloudflare'in ucretsiz planinda calisir (kart istemez).
@@ -127,7 +127,7 @@ const MAX_CHUNK = 32 * 1024;
 const MAX_HEADER = 8 * 1024;
 
 // ---------- VLESS oturumu ----------
-function handleVless(ws, appId) {
+function handleVless(ws, appId, tag) {
   const idBytes = uuidToBytes(appId);
   if (!idBytes) {
     try { ws.close(1011, "bad config"); } catch { /* yoksay */ }
@@ -146,10 +146,10 @@ function handleVless(ws, appId) {
   let up = 0; // istemci -> hedef
   let down = 0; // hedef -> istemci
 
-  const close = () => {
+  const close = (why = "?") => {
     if (closed) return;
     closed = true;
-    console.log("[vless] kapandi", target, "up=" + up, "down=" + down);
+    console.log(`[${tag}] kapandi (${why}) ${target} up=${up} down=${down}`);
     try { ws.close(); } catch { /* yoksay */ }
     try { writer?.close(); } catch { /* yoksay */ }
     try { socket?.close(); } catch { /* yoksay */ }
@@ -160,7 +160,9 @@ function handleVless(ws, appId) {
     try {
       ws.send(buf);
       down += buf.length;
-    } catch { close(); }
+    } catch {
+      close("send");
+    }
   };
 
   const drain = async () => {
@@ -170,7 +172,7 @@ function handleVless(ws, appId) {
       try {
         await writer.write(chunk);
       } catch {
-        close();
+        close("drain");
         return;
       }
     }
@@ -181,32 +183,35 @@ function handleVless(ws, appId) {
     if (closed || !chunk || chunk.length === 0) return;
     up += chunk.length;
     queue.push(chunk);
-    chain = chain.then(drain).catch(() => close());
+    chain = chain.then(drain).catch(() => close("chain"));
   };
 
   const openTcp = async (h) => {
     stage = "connecting";
     target = h.address + ":" + h.port;
-    console.log("[vless] hedef", target);
+    console.log(`[${tag}] hedef ${target}`);
     try {
       socket = connect({ hostname: h.address, port: h.port });
     } catch (e) {
-      console.log("[vless] connect HATA", target, String(e && e.message));
-      close();
+      console.log(`[${tag}] connect HATA ${target} ${String(e && e.message)}`);
+      close("connect-throw");
       return;
     }
-    socket.closed.catch(() => close());
+    socket.closed.catch((e) => {
+      console.log(`[${tag}] socket closed ${target} ${String(e && e.message)}`);
+      close("socket-closed");
+    });
 
     try {
       writer = socket.writable.getWriter();
       await socket.opened; // baglanti gercekten kuruldu mu?
     } catch (e) {
-      console.log("[vless] acilamadi", target, String(e && e.message));
-      close();
+      console.log(`[${tag}] acilamadi ${target} ${String(e && e.message)}`);
+      close("open-fail");
       return;
     }
     if (closed) return;
-    console.log("[vless] baglandi", target);
+    console.log(`[${tag}] baglandi ${target}`);
 
     // istemciye VLESS cevap basligi: ver + 0
     send(new Uint8Array([h.version, 0]));
@@ -230,7 +235,7 @@ function handleVless(ws, appId) {
           }
         }
       } catch { /* yoksay */ }
-      close();
+      close("reader-end");
     })();
   };
 
@@ -242,20 +247,20 @@ function handleVless(ws, appId) {
     if (stage === "header") {
       pending = concat(pending, chunk);
       if (pending.length > MAX_HEADER) {
-        close();
+        close("header-big");
         return;
       }
       const h = parseHeader(pending, idBytes);
       if (!h) return; // header henuz tamamlanmadi
       pending = new Uint8Array(0);
       if (h.error) {
-        console.log("[vless] reddedildi:", h.error);
-        close();
+        console.log(`[${tag}] reddedildi ${h.error}`);
+        close("bad-id");
         return;
       }
       if (h.command !== 1) { // 2 = UDP (Workers desteklemez)
-        console.log("[vless] desteklenmeyen komut:", h.command);
-        close();
+        console.log(`[${tag}] desteklenmeyen komut ${h.command}`);
+        close("bad-cmd");
         return;
       }
       openTcp(h);
@@ -276,11 +281,11 @@ function handleVless(ws, appId) {
     const data = event.data;
     rchain = rchain
       .then(() => onMessage(data))
-      .catch(() => close());
+      .catch((e) => close("msg-err:" + String(e && e.message)));
   });
 
-  ws.addEventListener("close", close);
-  ws.addEventListener("error", close);
+  ws.addEventListener("close", () => close("ws-close"));
+  ws.addEventListener("error", (e) => close("ws-error:" + String(e && e.message)));
 }
 
 // ---------- HTTP ----------
@@ -289,8 +294,10 @@ export default {
     const url = new URL(request.url);
     const wsPath = env.WS_PATH || DEFAULT_WS_PATH;
     const appId = (env.APP_ID || DEFAULT_APP_ID).trim();
+    const tag = (request.headers.get("cf-connecting-ip") || "?") + " " +
+      Math.random().toString(36).slice(2, 6);
 
-    console.log("[http]", request.method, url.pathname, url.search);
+    console.log(`[${tag}] http`, request.method, url.pathname, url.search);
 
     if (url.pathname === "/health") {
       return new Response("ok " + new Date().toISOString(), {
@@ -302,9 +309,7 @@ export default {
     if (url.pathname === "/probe") {
       const host = url.searchParams.get("host") || "";
       const port = Number(url.searchParams.get("port") || "443");
-      if (!host || !port) {
-        return new Response("host/port gerekli", { status: 400 });
-      }
+      if (!host || !port) return new Response("host/port gerekli", { status: 400 });
       const started = Date.now();
       let result = "ok";
       try {
@@ -318,7 +323,7 @@ export default {
         result = "HATA: " + String(e && e.message ? e.message : e);
       }
       const ms = Date.now() - started;
-      console.log("[probe]", host + ":" + port, ms + "ms", result);
+      console.log(`[${tag}] probe ${host}:${port} ${ms}ms ${result}`);
       return new Response(
         JSON.stringify({ host, port, ms, result }, null, 2),
         { headers: { "content-type": "application/json" } },
@@ -334,7 +339,7 @@ export default {
       const client = pair[0];
       const server = pair[1];
       server.accept();
-      handleVless(server, appId);
+      handleVless(server, appId, tag);
       return new Response(null, { status: 101, webSocket: client });
     }
 
