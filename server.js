@@ -10,16 +10,6 @@
  *   WS_PATH  - websocket path, default /notes-sync
  */
 
-// Deno Deploy'da bu dosya entrypoint olarak seciliyse Deno surumu (main.ts)
-// yuklenir. Node/Render'da asagidaki klasik sunucu calisir.
-if (typeof Deno !== 'undefined') {
-  import('./main.ts').catch((err) => {
-    console.error('[deno] main.ts yuklenemedi:', err && err.message ? err.message : err);
-    Deno.exit(1);
-  });
-  return;
-}
-
 const http = require('http');
 const net = require('net');
 const dgram = require('dgram');

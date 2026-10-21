@@ -432,9 +432,14 @@ function handler(req: Request): Response {
 if (LISTEN) {
   Deno.serve({ hostname: LISTEN.hostname, port: LISTEN.port }, handler);
 } else {
-  // Deno Deploy: adres Deno tarafindan cozulur (vsock/duplicate).
-  Deno.serve(handler);
+  // Deno Deploy auto-serve modu: platform HTTP'yi kendisi sunar (vsock),
+  // sadece default export (fetch) gerekir.
+  console.log("[info] auto-serve modu: default export kullanilacak");
 }
+
+// Deno Deploy / deno serve: modulun varsayilan export'unu fetch handler olarak
+// sunar. (Yerelde Deno.serve ile calisir.)
+export default { fetch: handler };
 
 console.log(
   "[info] listening on",
