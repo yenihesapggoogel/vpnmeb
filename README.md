@@ -19,8 +19,9 @@ Yerel `workerd` testi gecti: health + decoy sayfa + VLESS/TCP proxy + yanlis UUI
 CLI deploy, degiskenler (`APP_ID`, `WS_PATH`), limitler ve MEB filtresi notu:
 [`workers/README.md`](workers/README.md)
 
-**Sinir:** Workers UDP acmaz -> Roblox/DNS gibi UDP istekleri calismaz, normal web
-gezinmesi (TCP 443) calisir. `workers.dev` okulda engelliyse Worker'a kendi domainini
+**Sinir:** Workers UDP acmaz -> Roblox/DNS gibi UDP istekleri calismaz; ayrica
+Cloudflare arkasindaki sitelere (medium.com, discord.com gibi) TCP acamaz. Cloudflare
+**kullanmayan** siteler calisir. `workers.dev` okulda engelliyse Worker'a kendi domainini
 bagla veya Psiphon gibi hazir bir istemci kullan.
 
 ## Neden Hotspot Shield artik calismiyor?

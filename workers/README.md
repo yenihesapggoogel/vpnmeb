@@ -66,10 +66,16 @@ Beklenen cikti: `WORKER TESTLERI GECTI`
 | Konu | Durum |
 |---|---|
 | TCP (HTTP/HTTPS, web gezinme) | Calisir |
+| **Cloudflare arkasindaki siteler** (medium.com, discord.com, cloudflare.com...) | **Calismaz** - Workers kendi IP'lerine TCP acamaz |
 | UDP (Roblox, DNS, oyun sesi) | **Calismaz** - Workers UDP acmaz |
 | Istek limiti | 100.000 istek/gun (ucretsiz) |
 | WebSocket | Uzun sure acik kalabilir; istek basina CPU 10 ms |
 | Port 25 / Cloudflare IP'leri | Kapali (Cloudflare kurali) |
+
+> Test sonucu (canli Worker, 21.10.2026): `google.com:80` ve `neverssl.com:80`
+> tunelden gecti; `medium.com`, `discord.com`, `cloudflare.com` baglantisi
+> Workers tarafindan reddedildi. Yani internetteki her site degil, Cloudflare
+> **kullanmayan** siteler calisir. Tam kapsam icin Render/VPS gerekir.
 
 ## Okul filtresi (MEB) notu
 

@@ -5,14 +5,15 @@
 const domain = process.argv[2];
 const uuid = process.argv[3];
 const path = process.argv[4] || '/notes-sync';
+const label = process.argv[5] || 'MEB';
 
 if (!domain || !uuid) {
-  console.log('Kullanim: node generate-link.js <app>.onrender.com <UUID> [path]');
+  console.log('Kullanim: node generate-link.js <app>.onrender.com veya <worker>.workers.dev> <UUID> [path] [etiket]');
   process.exit(1);
 }
 
 const encPath = encodeURIComponent(path);
-const name = encodeURIComponent('Render-MEB');
+const name = encodeURIComponent(label);
 const link = `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${domain}&fp=chrome&type=ws&host=${domain}&path=${encPath}#${name}`;
 
 console.log('\n=== v2rayNG / v2rayN / Hiddify / Streisand icin link ===\n');

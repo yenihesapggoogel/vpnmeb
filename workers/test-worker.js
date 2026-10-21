@@ -16,6 +16,10 @@ const crypto = require('crypto');
 const BASE = process.env.WORKER_URL || 'http://127.0.0.1:8787';
 const WS_PATH = process.env.WS_PATH || '/notes-sync';
 const APP_ID = process.env.APP_ID || '8a5fb665-632e-4f9b-8337-e475a79d994c';
+// Test hedefi: port 80'de HTML donen, Cloudflare arkasinda OLMAYAN bir site.
+// (Cloudflare Workers, Cloudflare IP'lerine TCP baglanti acamaz.)
+const TARGET_HOST = process.env.TARGET_HOST || 'neverssl.com';
+const TARGET_PORT = Number(process.env.TARGET_PORT || 80);
 
 function uuidBytes(s) {
   return Buffer.from(s.replace(/-/g, ''), 'hex');
@@ -63,9 +67,9 @@ function vlessTcpTest() {
     }, 20000);
 
     ws.on('open', () => {
-      const header = buildHeader(APP_ID, 'example.com', 80);
+      const header = buildHeader(APP_ID, TARGET_HOST, TARGET_PORT);
       const httpReq = Buffer.from(
-        'GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n'
+        `GET / HTTP/1.1\r\nHost: ${TARGET_HOST}\r\nConnection: close\r\n\r\n`
       );
       ws.send(Buffer.concat([header, httpReq]));
     });
@@ -84,11 +88,14 @@ function vlessTcpTest() {
       } else {
         acc = Buffer.concat([acc, buf]);
       }
-      const s = acc.toString('utf8');
-      if (s.includes('Example Domain') || s.includes('</html>')) {
+      // herhangi bir veri geldiyse tunel calisiyor
+      if (gotHeader && acc.length > 0) {
         clearTimeout(timer);
-        console.log('3) VLESS/TCP proxy BASARILI, gelen byte:', acc.length);
-        console.log('   ilk 120 char:', s.slice(0, 120).replace(/\n/g, ' '));
+        console.log(
+          `3) VLESS/TCP proxy BASARILI (${TARGET_HOST}:${TARGET_PORT}), gelen byte:`,
+          acc.length
+        );
+        console.log('   ilk 120 char:', acc.toString('latin1').slice(0, 120).replace(/\r?\n/g, ' '));
         ws.close();
         resolve();
       }
