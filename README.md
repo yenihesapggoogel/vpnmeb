@@ -4,6 +4,32 @@ Kisisel not senkron servisi gorunumu altinda calisan, MEB/Fatih gibi sadece `TCP
 
 > Test edildi: `node test-vless.js` ile TCP proxy + UUID auth dogrulandi.
 
+## DURUM (21.10.2026)
+
+| Platform | Durum | Not |
+|---|---|---|
+| **Render** (`vpnmeb.onrender.com`) | Kod calisiyor, ama servis **"Service Suspended"** -> dashboard'dan **Resume** lazim | `onrender.com` okul filtresinden gecir; Render'da 100GB/ay limiti var |
+| Deno Deploy (`vpnmeb.yenihesapp401.deno.net`) | **503** - production routing'i cozulemedi (platform vsock adresini kendisi tutuyor, uygulama `AddrInUse` aliyor) | Ayrica okul (MEB) filtresi `*.deno.net` adreslerini engelliyor; Deno AUP'de "VPN / Forward proxy" yasak |
+| Deno Deploy preview | Bir ara calismisti (HTTP 200) | Sadece preview, production degil |
+
+**Hemen kullanmak icin:** Render dashboard > `vpnmeb` servisi > **Resume**.
+Sonra bu linki v2rayNG / v2rayN'ye yapistir:
+
+```
+vless://8a5fb665-632e-4f9b-8337-e475a79d994c@vpnmeb.onrender.com:443?encryption=none&security=tls&sni=vpnmeb.onrender.com&fp=chrome&type=ws&host=vpnmeb.onrender.com&path=%2Fnotes-sync#Render-MEB
+```
+
+> Render free 15 dk bos kalinca uyur (ilk baglanti ~50 sn). Cozum: UptimeRobot ile
+> 10 dk'da bir `https://vpnmeb.onrender.com/health` adresine ping.
+
+## Deno Deploy'a deploy (denendi, production'da 503)
+
+Node surumu (`server.js`) Deno'da calismaz -> Deno icin ayri giris noktasi var: `main.ts`
+(`Deno.serve` + `Deno.upgradeWebSocket` + `Deno.connect`). Yerelde testler gecti, ancak
+production'da platform routing'i cozulemedigi icin 503 veriyor (detay: `main.ts` icindeki
+yorumlar). Deno Deploy AUP'inde VPN/forward proxy yasak oldugu icin kalici cozum olarak
+onerilmez; Render ya da kendi VPS'in daha saglam secenek.
+
 ## Neden Hotspot Shield artik calismiyor?
 
 Arastirmaya gore MEB agi (FortiGuard + DPI):
