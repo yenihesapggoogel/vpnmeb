@@ -19,7 +19,6 @@ const PORT = Number(Deno.env.get("PORT") || "8000");
 const DEFAULT_APP_ID = "8a5fb665-632e-4f9b-8337-e475a79d994c";
 
 const decoder = new TextDecoder();
-
 // ---------- UUID -> 16 byte ----------
 function getAppIdBytes(): { id: string; bytes: Uint8Array } {
   const id = (Deno.env.get("APP_ID") || DEFAULT_APP_ID).trim();
@@ -396,6 +395,7 @@ function handleVless(ws: WebSocket) {
 // ---------- HTTP + WebSocket ----------
 Deno.serve({ hostname: "0.0.0.0", port: PORT }, (req) => {
   const url = new URL(req.url);
+  console.log("[req]", req.method, url.pathname);
 
   if (url.pathname === "/health") {
     return new Response("ok " + new Date().toISOString(), {
@@ -421,3 +421,9 @@ Deno.serve({ hostname: "0.0.0.0", port: PORT }, (req) => {
 console.log("[info] listening on 0.0.0.0:" + PORT);
 console.log("[info] WS_PATH =", WS_PATH);
 console.log("[info] APP_ID =", APP_ID_STR);
+console.log(
+  "[info] PORT env =",
+  Deno.env.get("PORT"),
+  "| env keys:",
+  Object.keys(Deno.env.toObject()).join(","),
+);
