@@ -475,6 +475,20 @@ try {
 } catch (e) {
   console.log("[diag] CID okunamadi", String(e).slice(0, 120));
 }
+// --- teşhis: platformun bekledigi adres / fd ---
+const policy = String(Deno.env.get("DENO_EGRESS_HEADER_POLICY") || "");
+for (let i = 0; i < policy.length; i += 80) {
+  console.log("[policy]", i, policy.slice(i, i + 80));
+}
+for (const fd of [3, 4, 5, 6]) {
+  try {
+    const s = Deno.serve({ fd } as unknown as Deno.ServeOptions, handler);
+    console.log("[diag] fd", fd, "ACILDI");
+    s.unref?.();
+  } catch (e) {
+    console.log("[diag] fd", fd, "HATA", String(e).slice(0, 100));
+  }
+}
 for (const k of ["DENO_EGRESS_HEADER_POLICY", "CDN_LOOP", "OTEL_DENO_VSOCK"]) {
   console.log("[env]", k, "=", String(Deno.env.get(k)).slice(0, 400));
 }
