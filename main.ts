@@ -40,6 +40,14 @@ function resolveServeTarget(): ServeTarget {
   return { hostname: "0.0.0.0", port: Number(Deno.env.get("PORT") || "8000") };
 }
 const TARGET = resolveServeTarget();
+// Platform vsock adresini kendisi tutuyor (AddrInUse). Bu yuzden vsock'a
+// baglanmiyoruz; platform HTTP'yi kendi listener'i uzerinden yonlendiriyor.
+// Ayrica ayni portu TCP olarak da dinliyoruz (yedek yol).
+const TCP_PORT = (() => {
+  const raw = Deno.env.get("DENO_SERVE_ADDRESS");
+  const m = raw ? /:(?:vsock:-?\d+)?:?(\d+)$/.exec(raw) : null;
+  return m ? Number(m[1]) : Number(Deno.env.get("PORT") || "8000");
+})();
 
 const decoder = new TextDecoder();
 // ---------- UUID -> 16 byte ----------
@@ -441,8 +449,15 @@ function handler(req: Request): Response {
   });
 }
 
-// Deno Deploy'da vsock adresine baglanir, lokalde 0.0.0.0:8000.
-Deno.serve(TARGET as Deno.ServeOptions, handler);
+// Deno Deploy'da platform (auto-serve) varsayilan export'u sunar; ayrica
+// TCP olarak da dinliyoruz ki her iki yol da calissin.
+Deno.serve(handler);
+try {
+  const alt = Deno.serve({ hostname: "0.0.0.0", port: TCP_PORT }, handler);
+  alt.unref?.();
+} catch (err) {
+  console.log("[info] yedek TCP dinleyici acilamadi:", String(err));
+}
 
 // Deno Deploy / deno serve: modulun varsayilan export'unu fetch handler olarak
 // sunar. (Yerelde Deno.serve ile calisir.)
