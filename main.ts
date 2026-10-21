@@ -459,6 +459,27 @@ try {
   console.log("[info] yedek TCP dinleyici acilamadi:", String(err));
 }
 
+// --- teşhis: platformun bekledigi adres ---
+try {
+  const localCid = Deno.readTextFileSync("/proc/vsock/get_local_cid").trim();
+  console.log("[diag] local vsock CID =", localCid);
+  for (const cid of [-1, Number(localCid)]) {
+    try {
+      const s = Deno.serve({ transport: "vsock", cid, port: TCP_PORT }, handler);
+      console.log("[diag] vsock cid", cid, "port", TCP_PORT, "-> ACILDI", JSON.stringify(s.addr));
+      s.unref?.();
+    } catch (e) {
+      console.log("[diag] vsock cid", cid, "HATA:", String(e));
+    }
+  }
+} catch (e) {
+  console.log("[diag] vsock CID okunamadi:", String(e));
+}
+console.log(
+  "[diag] env =",
+  JSON.stringify(Deno.env.toObject(), null, 1).slice(0, 3000),
+);
+
 // Deno Deploy / deno serve: modulun varsayilan export'unu fetch handler olarak
 // sunar. (Yerelde Deno.serve ile calisir.)
 export default { fetch: handler };
