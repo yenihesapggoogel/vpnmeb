@@ -22,6 +22,47 @@ vless://8a5fb665-632e-4f9b-8337-e475a79d994c@vpnmeb.onrender.com:443?encryption=
 > Render free 15 dk bos kalinca uyur (ilk baglanti ~50 sn). Cozum: UptimeRobot ile
 > 10 dk'da bir `https://vpnmeb.onrender.com/health` adresine ping.
 
+## VDS/VPS olmadan: Cloudflare Workers (ucretsiz, kart istemez)
+
+`workers/vless-worker.js` = ayni VLESS-over-WS sunucusunun Cloudflare Workers surumu.
+Sunucu/VDS yok, Cloudflare'in ucretsiz planinda calisir (100.000 istek/gun).
+
+1. https://dash.cloudflare.com -> **Workers & Pages** -> **Create** -> **Worker**
+2. Isim ver (ornek `notes-sync`) -> **Deploy**
+3. **Edit code** -> icindeki kodu sil, `workers/vless-worker.js` icerigini yapistir -> **Deploy**
+4. Test: `https://notes-sync.<hesap>.workers.dev/health` -> `ok ...` yazmali
+5. Link uret:
+
+```bash
+node generate-link.js notes-sync.<hesap>.workers.dev 8a5fb665-632e-4f9b-8337-e475a79d994c
+```
+
+(UUID'yi degistirmek istersen Worker > Settings > Variables > `APP_ID` ekle; ayni
+degeri linke de yaz.)
+
+**Sinirlar:** Workers UDP acmaz -> Roblox/DNS gibi UDP istekleri calismaz, normal
+web gezinmesi (TCP 443) calisir. Okul filtresi `workers.dev` adresini engelliyorsa
+Worker'a kendi domainini bagla (Domains > Custom Domain) - ucretsiz plan domain
+baglamaya izin verir, domain ucretli olabilir.
+
+**Kontrol:** Okul bilgisayarinda `https://notes-sync.<hesap>.workers.dev/` ac.
+Not defteri sayfasi geliyorsa filtre gecmemis demektir (link calisir); "MEB Erisim
+Engeli" geliyorsa o alan adi kategoriden takiliyor -> hazir istemcilere bak.
+
+## Hic sunucu olmadan: hazir istemciler (en hizli yol)
+
+Kod/deploy istemiyorsan, filtre asmak icin tasarlanmis ucretsiz araclar:
+
+| Arac | Ne yapar | Not |
+|---|---|---|
+| **Psiphon** (psiphon.ca) | Obfuscated proxy, kendi sunucu agi | Kur, "Connect" bas. MEB'de en yuksek sans. |
+| **Cloudflare WARP** (+ warp-plus) | Cloudflare agina MASQUE/WireGuard | 1.1.1.1 DNS'i tikali olabilir; warp-plus obfuscation ile dener |
+| **Tor Browser + Snowflake** | Tor koprusu, domain engeli tanimaz | Yavas ama inatci |
+| **Hiddify / v2rayNG + ucretsiz config** | Hazir VLESS/VMess abonelikleri | Halka acik nodelar guvensiz ve kararsiz; sadece acil durum |
+
+Siralama onerisi: **Psiphon -> Cloudflare Worker (yukarida) -> Tor+Snowflake**.
+Hepsi "sunucu kirala" demeden calisir; tek gereken cihaza uygulamayi kurmak.
+
 ## Deno Deploy'a deploy (denendi, production'da 503)
 
 Node surumu (`server.js`) Deno'da calismaz -> Deno icin ayri giris noktasi var: `main.ts`

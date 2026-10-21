@@ -449,69 +449,10 @@ function handler(req: Request): Response {
   });
 }
 
-// Deno Deploy'da platform (auto-serve) varsayilan export'u sunar; ayrica
-// TCP olarak da dinliyoruz ki her iki yol da calissin.
-Deno.serve(handler);
-try {
-  const alt = Deno.serve({ hostname: "0.0.0.0", port: TCP_PORT }, handler);
-  alt.unref?.();
-} catch (err) {
-  console.log("[info] yedek TCP dinleyici acilamadi:", String(err));
-}
-
-// --- teşhis: platformun bekledigi adres ---
-try {
-  const localCid = Deno.readTextFileSync("/proc/vsock/get_local_cid").trim();
-  console.log("[diag] CID", localCid);
-  for (const cid of [-1, Number(localCid)]) {
-    try {
-      const s = Deno.serve({ transport: "vsock", cid, port: TCP_PORT }, handler);
-      console.log("[diag] vsock", cid, "ACILDI");
-      s.unref?.();
-    } catch (e) {
-      console.log("[diag] vsock", cid, "HATA", String(e).slice(0, 120));
-    }
-  }
-} catch (e) {
-  console.log("[diag] CID okunamadi", String(e).slice(0, 120));
-}
-// --- teşhis: platformun bekledigi adres / fd ---
-const policy = String(Deno.env.get("DENO_EGRESS_HEADER_POLICY") || "");
-for (let i = 0; i < policy.length; i += 80) {
-  console.log("[policy]", i, policy.slice(i, i + 80));
-}
-for (const fd of [3, 4, 5, 6]) {
-  try {
-    const s = Deno.serve({ fd } as unknown as Deno.ServeOptions, handler);
-    console.log("[diag] fd", fd, "ACILDI");
-    s.unref?.();
-  } catch (e) {
-    console.log("[diag] fd", fd, "HATA", String(e).slice(0, 100));
-  }
-}
-for (const k of ["DENO_EGRESS_HEADER_POLICY", "CDN_LOOP", "OTEL_DENO_VSOCK"]) {
-  console.log("[env]", k, "=", String(Deno.env.get(k)).slice(0, 400));
-}
-
-// Deno Deploy / deno serve: modulun varsayilan export'unu fetch handler olarak
-// sunar. (Yerelde Deno.serve ile calisir.)
+// Yerelde (Deno.serve) ve Deno Deploy'da (varsayilan export) ayni handler.
+Deno.serve({ hostname: "0.0.0.0", port: TCP_PORT }, handler);
 export default { fetch: handler };
 
-console.log(
-  "[info] listening on",
-  JSON.stringify(TARGET),
-  "| DENO_SERVE_ADDRESS =",
-  Deno.env.get("DENO_SERVE_ADDRESS"),
-);
+console.log("[info] listening on", JSON.stringify(TARGET));
 console.log("[info] WS_PATH =", WS_PATH);
 console.log("[info] APP_ID =", APP_ID_STR);
-console.log(
-  "[info] DENO_SERVE_ADDRESS =",
-  Deno.env.get("DENO_SERVE_ADDRESS"),
-  "| DENO_AUTO_SERVE =",
-  Deno.env.get("DENO_AUTO_SERVE"),
-  "| DENO_REGION =",
-  Deno.env.get("DENO_REGION"),
-  "| EGRESS_POLICY =",
-  Deno.env.get("DENO_EGRESS_HEADER_POLICY"),
-);
