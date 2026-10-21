@@ -17,21 +17,17 @@
 const WS_PATH = Deno.env.get("WS_PATH") || "/notes-sync";
 const DEFAULT_APP_ID = "8a5fb665-632e-4f9b-8337-e475a79d994c";
 
-// Deno Deploy hangi adreste dinlenmesini istiyorsa orayi kullan.
-// DENO_SERVE_ADDRESS yoksa PORT (yoksa 8000) ve 0.0.0.0.
-function resolveListen(): { hostname: string; port: number } {
-  const addr = Deno.env.get("DENO_SERVE_ADDRESS");
-  if (addr) {
-    const i = addr.lastIndexOf(":");
-    const hostname = addr.slice(0, i).replace(/^\[|\]$/g, "") || "0.0.0.0";
-    const port = Number(addr.slice(i + 1));
-    if (port > 0) return { hostname, port };
-  }
+// Deno Deploy, uygulamanin hangi adreste dinlenecegini DENO_SERVE_ADDRESS
+// ile bildirir ("duplicate,vsock:-1" gibi ozel bir deger). Deno bu degeri
+// kendisi cozer, o yuzden hicbir sey elle ayarlanmaz - sadece Deno.serve'a
+// hostname/port VERMEYIZ, aksi halde Deno vsock adresine baglanamaz.
+// Lokal calistirmada (DENO_SERVE_ADDRESS yok) 0.0.0.0:PORT dinlenir.
+const SERVE_ADDRESS = Deno.env.get("DENO_SERVE_ADDRESS");
+const LISTEN = (() => {
+  if (SERVE_ADDRESS) return null; // Deno kendi adresini cozer
   const port = Number(Deno.env.get("PORT") || "8000");
   return { hostname: "0.0.0.0", port };
-}
-const LISTEN = resolveListen();
-const PORT = LISTEN.port;
+})();
 
 const decoder = new TextDecoder();
 // ---------- UUID -> 16 byte ----------
@@ -408,7 +404,7 @@ function handleVless(ws: WebSocket) {
 }
 
 // ---------- HTTP + WebSocket ----------
-Deno.serve({ hostname: LISTEN.hostname, port: LISTEN.port }, (req) => {
+function handler(req: Request): Response {
   const url = new URL(req.url);
   console.log("[req]", req.method, url.pathname);
 
@@ -431,9 +427,19 @@ Deno.serve({ hostname: LISTEN.hostname, port: LISTEN.port }, (req) => {
   return new Response(HOME_HTML, {
     headers: { "content-type": "text/html; charset=utf-8" },
   });
-});
+}
 
-console.log("[info] listening on " + LISTEN.hostname + ":" + PORT);
+if (LISTEN) {
+  Deno.serve({ hostname: LISTEN.hostname, port: LISTEN.port }, handler);
+} else {
+  // Deno Deploy: adres Deno tarafindan cozulur (vsock/duplicate).
+  Deno.serve(handler);
+}
+
+console.log(
+  "[info] listening on",
+  LISTEN ? LISTEN.hostname + ":" + LISTEN.port : SERVE_ADDRESS,
+);
 console.log("[info] WS_PATH =", WS_PATH);
 console.log("[info] APP_ID =", APP_ID_STR);
 console.log(
