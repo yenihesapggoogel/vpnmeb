@@ -70,6 +70,42 @@ Render free notlari:
 - Ayda ~100GB limit. Video izlersen cabuk biter, biterse silip yeni isimle redeploy et.
 - Proxy kelimesi repo ismi/aciklamasinda gecmesin, Render askıya alabiliyor. Bu repo zaten masum isimli.
 
+## 3b) Deno Deploy'a deploy (alternatif)
+
+Node surumu (`server.js`) Deno'da calismaz -> Deno Deploy **503** verir.
+Deno icin ayri bir giris noktasi var: `main.ts` (`Deno.serve` + `Deno.upgradeWebSocket` + `Deno.connect`).
+
+GitHub baglantili app (console'da repo secili ise) icin: repoya `main.ts` + `deno.json`
+pushlayin, otomatik deploy olur.
+
+```bash
+# deno.json -> {"deploy": {"entrypoint": "main.ts"}}  (zaten ekli)
+deno deploy create \
+  --org yenihesapp401 \
+  --app vpnmeb \
+  --source local \
+  --runtime-mode dynamic --entrypoint main.ts \
+  --build-timeout 5 --build-memory-limit 1024 --region eu
+```
+
+Link uretme:
+
+```bash
+node generate-link.js vpnmeb.yenihesapp401.deno.net SENIN-UUID /notes-sync
+```
+
+### Deno Deploy limitleri (okuman lazim)
+
+| Konu | Durum |
+|---|---|
+| VLESS + WS + TCP | Calisir (`Deno.upgradeWebSocket` + `Deno.connect`) |
+| UDP (DNS-over-UDP, Roblox oyun trafigi) | **Calismaz**: Deno 2.x stable'da UDP API'si yok (`Deno.udp` / `Deno.listenUDP` undefined) |
+| 443'e ham TCP baglanti | Deno Deploy "TLS proxying" politikasi 443'e `Deno.connect` ile ham baglantiyi yasakliyor; HTTPS siteler engellenebilir |
+| Kullanim politikasi | Deno Deploy AUP'inde **"Forward proxy"** ve **"VPN"** yasakli -> app/hesap kapatilabilir |
+
+Sonuc: Deno Deploy okulda kalici cozum degil. **Render (free)** veya kendi VPS'in
+(Contabo/Hetzner) daha saglam secenek; Render'da UDP de calisiyor.
+
 ## 4) Baglanti linki uret
 
 ```bash
@@ -144,8 +180,12 @@ Bazi okullarda `*.onrender.com` proxy kategorisine alinmis oluyor. Cozumler:
 
 ## Dosyalar
 
-- `server.js` - VLESS+WS sunucu (TCP+UDP, auth, decoy sayfa)
+- `server.js` - VLESS+WS sunucu (Node/Render: TCP+UDP, auth, decoy sayfa)
+- `main.ts` - ayni protokolun Deno (Deno Deploy) surumu
+- `deno.json` - Deno task'lari + deploy entrypoint
 - `package.json` - `ws` bagimliligi
 - `render.yaml` - tek tik deploy
 - `generate-link.js` - istemci link uretici
-- `test-vless.js` - lokal test (`node test-vless.js`)
+- `test-vless.js` - lokal test (`node test-vless.js`, `SERVER_CMD` ile sunucu degistirilebilir)
+- `test-udp.js` / `test-udp-local.js` - UDP testleri
+- `test-remote.js` - canli sunucuya (wss://) uctan uca test

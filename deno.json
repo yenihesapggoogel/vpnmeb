@@ -1,0 +1,17 @@
+{
+  "tasks": {
+    "start": "deno serve --allow-net --allow-env --port 8000 main.ts",
+    "dev": "deno run --allow-net --allow-env main.ts",
+    "check": "deno check main.ts",
+    "test": "deno task check && node test-vless.js"
+  },
+  "deploy": {
+    "entrypoint": "main.ts"
+  },
+  "compilerOptions": {
+    "strict": true
+  },
+  "fmt": {
+    "lineWidth": 80
+  }
+}

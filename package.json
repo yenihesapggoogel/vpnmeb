@@ -7,7 +7,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "generate-id": "node -e \"console.log(require('crypto').randomUUID())\""
+    "generate-id": "node -e \"console.log(require('crypto').randomUUID())\"",
+    "test": "node test-vless.js && node test-udp-local.js",
+    "test:vless": "node test-vless.js",
+    "test:udp": "node test-udp-local.js",
+    "test:deno": "deno task check"
   },
   "dependencies": {
     "ws": "^8.18.0"
