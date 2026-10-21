@@ -142,10 +142,14 @@ function handleVless(ws, appId) {
   const queue = []; // yazici hazir olmadan gelen parcalar (sira korunur)
   const pre = []; // TCP baglantisi kurulurken gelen parcalar
   let chain = Promise.resolve();
+  let target = "?";
+  let up = 0; // istemci -> hedef
+  let down = 0; // hedef -> istemci
 
   const close = () => {
     if (closed) return;
     closed = true;
+    console.log("[vless] kapandi", target, "up=" + up, "down=" + down);
     try { ws.close(); } catch { /* yoksay */ }
     try { writer?.close(); } catch { /* yoksay */ }
     try { socket?.close(); } catch { /* yoksay */ }
@@ -153,7 +157,10 @@ function handleVless(ws, appId) {
 
   const send = (buf) => {
     if (closed || !buf || buf.length === 0) return;
-    try { ws.send(buf); } catch { close(); }
+    try {
+      ws.send(buf);
+      down += buf.length;
+    } catch { close(); }
   };
 
   const drain = async () => {
@@ -172,15 +179,19 @@ function handleVless(ws, appId) {
   // Tum yazmalar ayni zincirden gecer -> parcalar sirayla hedefe gider.
   const enqueue = (chunk) => {
     if (closed || !chunk || chunk.length === 0) return;
+    up += chunk.length;
     queue.push(chunk);
     chain = chain.then(drain).catch(() => close());
   };
 
   const openTcp = async (h) => {
     stage = "connecting";
+    target = h.address + ":" + h.port;
+    console.log("[vless] hedef", target);
     try {
       socket = connect({ hostname: h.address, port: h.port });
-    } catch {
+    } catch (e) {
+      console.log("[vless] connect HATA", target, String(e && e.message));
       close();
       return;
     }
@@ -189,11 +200,13 @@ function handleVless(ws, appId) {
     try {
       writer = socket.writable.getWriter();
       await socket.opened; // baglanti gercekten kuruldu mu?
-    } catch {
+    } catch (e) {
+      console.log("[vless] acilamadi", target, String(e && e.message));
       close();
       return;
     }
     if (closed) return;
+    console.log("[vless] baglandi", target);
 
     // istemciye VLESS cevap basligi: ver + 0
     send(new Uint8Array([h.version, 0]));
@@ -236,10 +249,12 @@ function handleVless(ws, appId) {
       if (!h) return; // header henuz tamamlanmadi
       pending = new Uint8Array(0);
       if (h.error) {
+        console.log("[vless] reddedildi:", h.error);
         close();
         return;
       }
       if (h.command !== 1) { // 2 = UDP (Workers desteklemez)
+        console.log("[vless] desteklenmeyen komut:", h.command);
         close();
         return;
       }
@@ -275,10 +290,39 @@ export default {
     const wsPath = env.WS_PATH || DEFAULT_WS_PATH;
     const appId = (env.APP_ID || DEFAULT_APP_ID).trim();
 
+    console.log("[http]", request.method, url.pathname, url.search);
+
     if (url.pathname === "/health") {
       return new Response("ok " + new Date().toISOString(), {
         headers: { "content-type": "text/plain" },
       });
+    }
+
+    // Teshis: hedefe TCP acilabiliyor mu?  /probe?host=google.com&port=443
+    if (url.pathname === "/probe") {
+      const host = url.searchParams.get("host") || "";
+      const port = Number(url.searchParams.get("port") || "443");
+      if (!host || !port) {
+        return new Response("host/port gerekli", { status: 400 });
+      }
+      const started = Date.now();
+      let result = "ok";
+      try {
+        const s = connect({ hostname: host, port });
+        await Promise.race([
+          s.opened,
+          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout 8s")), 8000)),
+        ]);
+        try { s.close(); } catch { /* yoksay */ }
+      } catch (e) {
+        result = "HATA: " + String(e && e.message ? e.message : e);
+      }
+      const ms = Date.now() - started;
+      console.log("[probe]", host + ":" + port, ms + "ms", result);
+      return new Response(
+        JSON.stringify({ host, port, ms, result }, null, 2),
+        { headers: { "content-type": "application/json" } },
+      );
     }
 
     if (url.pathname === wsPath) {
