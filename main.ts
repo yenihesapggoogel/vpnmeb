@@ -462,23 +462,22 @@ try {
 // --- teşhis: platformun bekledigi adres ---
 try {
   const localCid = Deno.readTextFileSync("/proc/vsock/get_local_cid").trim();
-  console.log("[diag] local vsock CID =", localCid);
+  console.log("[diag] CID", localCid);
   for (const cid of [-1, Number(localCid)]) {
     try {
       const s = Deno.serve({ transport: "vsock", cid, port: TCP_PORT }, handler);
-      console.log("[diag] vsock cid", cid, "port", TCP_PORT, "-> ACILDI", JSON.stringify(s.addr));
+      console.log("[diag] vsock", cid, "ACILDI");
       s.unref?.();
     } catch (e) {
-      console.log("[diag] vsock cid", cid, "HATA:", String(e));
+      console.log("[diag] vsock", cid, "HATA", String(e).slice(0, 120));
     }
   }
 } catch (e) {
-  console.log("[diag] vsock CID okunamadi:", String(e));
+  console.log("[diag] CID okunamadi", String(e).slice(0, 120));
 }
-console.log(
-  "[diag] env =",
-  JSON.stringify(Deno.env.toObject(), null, 1).slice(0, 3000),
-);
+for (const k of Object.keys(Deno.env.toObject())) {
+  console.log("[env]", k, "=", String(Deno.env.get(k)).slice(0, 200));
+}
 
 // Deno Deploy / deno serve: modulun varsayilan export'unu fetch handler olarak
 // sunar. (Yerelde Deno.serve ile calisir.)
