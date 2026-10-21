@@ -1,0 +1,16 @@
+# Cloudflare Workers yapilandirmasi (kok dizin)
+#
+# Bu dosya sayesinde hem dashboard'dan "Git'e bagla" ile,
+# hem de terminalden tek komutla deploy edilir:
+#   npx wrangler deploy
+#
+# Ucretsiz plan yeterli, kart gerekmez.
+# Degiskenler (Dashboard > Worker > Settings > Variables and Secrets):
+#   APP_ID  = istemcideki UUID  (yoksa koddaki varsayilan)
+#   WS_PATH = /notes-sync
+
+name = "notes-sync"
+main = "workers/vless-worker.js"
+compatibility_date = "2026-10-01"
+
+# Ayni kod Node (server.js) tarafinda da calisir; bu ayar sadece Worker icin.
