@@ -18,16 +18,28 @@ const WS_PATH = Deno.env.get("WS_PATH") || "/notes-sync";
 const DEFAULT_APP_ID = "8a5fb665-632e-4f9b-8337-e475a79d994c";
 
 // Deno Deploy, uygulamanin hangi adreste dinlenecegini DENO_SERVE_ADDRESS
-// ile bildirir ("duplicate,vsock:-1" gibi ozel bir deger). Deno bu degeri
-// kendisi cozer, o yuzden hicbir sey elle ayarlanmaz - sadece Deno.serve'a
-// hostname/port VERMEYIZ, aksi halde Deno vsock adresine baglanamaz.
-// Lokal calistirmada (DENO_SERVE_ADDRESS yok) 0.0.0.0:PORT dinlenir.
-const SERVE_ADDRESS = Deno.env.get("DENO_SERVE_ADDRESS");
-const LISTEN = (() => {
-  if (SERVE_ADDRESS) return null; // Deno kendi adresini cozer
-  const port = Number(Deno.env.get("PORT") || "8000");
-  return { hostname: "0.0.0.0", port };
-})();
+// ile bildirir. Platform degeri platforma ozgu ("duplicate,vsock:-1:8080"),
+// Deno'nun bunu otomatik cozmedigi durumlarda elle cozuyoruz:
+//   vsock:<cid>:<port> -> Deno.serve({ cid, port })
+//   tcp:<host>:<port>   -> Deno.serve({ hostname, port })
+// Lokalde (env yok) 0.0.0.0:8000.
+type ServeTarget = { hostname?: string; port?: number; cid?: number };
+
+function resolveServeTarget(): ServeTarget {
+  const raw = Deno.env.get("DENO_SERVE_ADDRESS");
+  if (raw) {
+    const vsock = /^(?:duplicate,)?vsock:(-?\d+):(\d+)$/.exec(raw);
+    if (vsock) {
+      return { cid: Number(vsock[1]), port: Number(vsock[2]) };
+    }
+    const tcp = /^(?:duplicate,)?tcp:(.+):(\d+)$/.exec(raw);
+    if (tcp) {
+      return { hostname: tcp[1], port: Number(tcp[2]) };
+    }
+  }
+  return { hostname: "0.0.0.0", port: Number(Deno.env.get("PORT") || "8000") };
+}
+const TARGET = resolveServeTarget();
 
 const decoder = new TextDecoder();
 // ---------- UUID -> 16 byte ----------
@@ -429,13 +441,8 @@ function handler(req: Request): Response {
   });
 }
 
-if (LISTEN) {
-  Deno.serve({ hostname: LISTEN.hostname, port: LISTEN.port }, handler);
-} else {
-  // Deno Deploy auto-serve modu: platform HTTP'yi kendisi sunar (vsock),
-  // sadece default export (fetch) gerekir.
-  console.log("[info] auto-serve modu: default export kullanilacak");
-}
+// Deno Deploy'da vsock adresine baglanir, lokalde 0.0.0.0:8000.
+Deno.serve(TARGET as Deno.ServeOptions, handler);
 
 // Deno Deploy / deno serve: modulun varsayilan export'unu fetch handler olarak
 // sunar. (Yerelde Deno.serve ile calisir.)
@@ -443,7 +450,9 @@ export default { fetch: handler };
 
 console.log(
   "[info] listening on",
-  LISTEN ? LISTEN.hostname + ":" + LISTEN.port : SERVE_ADDRESS,
+  JSON.stringify(TARGET),
+  "| DENO_SERVE_ADDRESS =",
+  Deno.env.get("DENO_SERVE_ADDRESS"),
 );
 console.log("[info] WS_PATH =", WS_PATH);
 console.log("[info] APP_ID =", APP_ID_STR);
