@@ -15,8 +15,23 @@
  */
 
 const WS_PATH = Deno.env.get("WS_PATH") || "/notes-sync";
-const PORT = Number(Deno.env.get("PORT") || "8000");
 const DEFAULT_APP_ID = "8a5fb665-632e-4f9b-8337-e475a79d994c";
+
+// Deno Deploy hangi adreste dinlenmesini istiyorsa orayi kullan.
+// DENO_SERVE_ADDRESS yoksa PORT (yoksa 8000) ve 0.0.0.0.
+function resolveListen(): { hostname: string; port: number } {
+  const addr = Deno.env.get("DENO_SERVE_ADDRESS");
+  if (addr) {
+    const i = addr.lastIndexOf(":");
+    const hostname = addr.slice(0, i).replace(/^\[|\]$/g, "") || "0.0.0.0";
+    const port = Number(addr.slice(i + 1));
+    if (port > 0) return { hostname, port };
+  }
+  const port = Number(Deno.env.get("PORT") || "8000");
+  return { hostname: "0.0.0.0", port };
+}
+const LISTEN = resolveListen();
+const PORT = LISTEN.port;
 
 const decoder = new TextDecoder();
 // ---------- UUID -> 16 byte ----------
@@ -393,7 +408,7 @@ function handleVless(ws: WebSocket) {
 }
 
 // ---------- HTTP + WebSocket ----------
-Deno.serve({ hostname: "0.0.0.0", port: PORT }, (req) => {
+Deno.serve({ hostname: LISTEN.hostname, port: LISTEN.port }, (req) => {
   const url = new URL(req.url);
   console.log("[req]", req.method, url.pathname);
 
@@ -418,12 +433,16 @@ Deno.serve({ hostname: "0.0.0.0", port: PORT }, (req) => {
   });
 });
 
-console.log("[info] listening on 0.0.0.0:" + PORT);
+console.log("[info] listening on " + LISTEN.hostname + ":" + PORT);
 console.log("[info] WS_PATH =", WS_PATH);
 console.log("[info] APP_ID =", APP_ID_STR);
 console.log(
-  "[info] PORT env =",
-  Deno.env.get("PORT"),
-  "| env keys:",
-  Object.keys(Deno.env.toObject()).join(","),
+  "[info] DENO_SERVE_ADDRESS =",
+  Deno.env.get("DENO_SERVE_ADDRESS"),
+  "| DENO_AUTO_SERVE =",
+  Deno.env.get("DENO_AUTO_SERVE"),
+  "| DENO_REGION =",
+  Deno.env.get("DENO_REGION"),
+  "| EGRESS_POLICY =",
+  Deno.env.get("DENO_EGRESS_HEADER_POLICY"),
 );
